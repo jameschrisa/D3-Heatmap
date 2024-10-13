@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heatmap Component Test</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.6.1/nouislider.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.6.1/nouislider.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #app {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            width: 90%;
+            max-width: 1000px;
+        }
+        .heatmap-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .color-range-slider {
+            width: 35%;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .color-legend {
+            width: 100%;
+            height: 15px;
+            margin-bottom: 5px;
+        }
+        .heatmap {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .noUi-connect {
+            background: none;
+        }
+        .noUi-target {
+            height: 15px;
+            border: none;
+            box-shadow: none;
+            background: none;
+        }
+        .noUi-handle {
+            height: 28px !important;
+            width: 28px !important;
+            top: -7px !important;
+            right: -14px !important;
+            border-radius: 50%;
+            background-color: white;
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        .noUi-handle:before, .noUi-handle:after {
+            display: none;
+        }
+        .slider-label {
+            font-size: 14px;
+            font-weight: bold;
+            margin: 0 20px;
+            min-width: 50px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1 style="text-align: center;">Heatmap Component Test</h1>
+        <heatmap-component :data="heatmapData"></heatmap-component>
+    </div>
+
+    <script>
+    // Heatmap configuration
+    const heatmapConfig = {
+        dimensions: {
+            width: 800,
+            height: 240,
+            margin: { top: 10, right: 10, bottom: 10, left: 10 }
+        },
+        grid: {
+            rows: 6,
+            cols: 20,
+            cellSize: 40
+        },
+        colorScale: {
+            domain: [0, 20, 40, 60, 80, 100],
+            range: ['#FFFF00', '#FFA500', '#FF4500', '#FF0000', '#8B0000', '#404040']
+        }
+    };
+
+    // Heatmap component
+    const HeatmapComponent = {
+        template: `
+            <div class="heatmap-container">
+                <div class="color-range-slider">
+                    <span class="slider-label">< 20%</span>
+                    <div style="width: 100%;">
+                        <div ref="colorLegend" class="color-legend"></div>
+                        <div ref="slider"></div>
+                    </div>
+                    <span class="slider-label">> 98%</span>
+                </div>
+                <div ref="heatmap" class="heatmap"></div>
+            </div>
+        `,
+        props: ['data'],
+        data() {
+            return {
+                colorScale: null,
+                slider: null
+            };
+        },
+        mounted() {
+            this.initializeHeatmap();
+        },
+        methods: {
+            initializeHeatmap() {
+                const { width, height, margin } = heatmapConfig.dimensions;
+                const svg = d3.select(this.$refs.heatmap)
+                    .append('svg')
+                    .attr('width', width + margin.left + margin.right)
+                    .attr('height', height + margin.top + margin.bottom)
+                    .append('g')
+                    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+                this.colorScale = d3.scaleLinear()
+                    .domain(heatmapConfig.colorScale.domain)
+                    .range(heatmapConfig.colorScale.range);
+
+                this.createHeatmap(svg);
+                this.createColorLegend();
+                this.createSlider();
+            },
+            createHeatmap(svg) {
+                const { cellSize, rows, cols } = heatmapConfig.grid;
+                const cells = svg.selectAll('rect')
+                    .data(this.data)
+                    .enter()
+                    .append('rect')
+                    .attr('x', (d, i) => (i % cols) * cellSize)
+                    .attr('y', (d, i) => Math.floor(i / cols) * cellSize)
+                    .attr('width', cellSize)
+                    .attr('height', cellSize)
+                    .style('fill', d => this.colorScale(d.value))
+                    .style('stroke', 'white')
+                    .style('stroke-width', '1px')
+                    .on('mouseover', this.handleMouseOver)
+                    .on('mouseout', this.handleMouseOut);
+
+                svg.selectAll('text')
+                    .data(this.data)
+                    .enter()
+                    .append('text')
+                    .attr('x', (d, i) => (i % cols) * cellSize + cellSize / 2)
+                    .attr('y', (d, i) => Math.floor(i / cols) * cellSize + cellSize / 2)
+                    .attr('text-anchor', 'middle')
+                    .attr('dominant-baseline', 'central')
+                    .style('font-size', `${cellSize / 4}px`)
+                    .style('fill', 'black')
+                    .text(d => d.flare);
+            },
+            createColorLegend() {
+                const legendWidth = this.$refs.colorLegend.clientWidth;
+                const legendHeight = 15;
+
+                const legendSvg = d3.select(this.$refs.colorLegend)
+                    .append('svg')
+                    .attr('width', '100%')
+                    .attr('height', legendHeight);
+
+                const gradient = legendSvg.append('defs')
+                    .append('linearGradient')
+                    .attr('id', 'color-legend-gradient')
+                    .attr('x1', '0%')
+                    .attr('y1', '0%')
+                    .attr('x2', '100%')
+                    .attr('y2', '0%');
+
+                gradient.selectAll('stop')
+                    .data(heatmapConfig.colorScale.range.map((color, i) => ({
+                        offset: `${i * 100 / (heatmapConfig.colorScale.range.length - 1)}%`,
+                        color: color
+                    })))
+                    .enter().append('stop')
+                    .attr('offset', d => d.offset)
+                    .attr('stop-color', d => d.color);
+
+                legendSvg.append('rect')
+                    .attr('width', '100%')
+                    .attr('height', legendHeight)
+                    .style('fill', 'url(#color-legend-gradient)');
+            },
+            createSlider() {
+                this.slider = noUiSlider.create(this.$refs.slider, {
+                    start: [20, 98],
+                    connect: true,
+                    range: {
+                        'min': 0,
+                        'max': 100
+                    },
+                    step: 1
+                });
+
+                this.slider.on('update', this.updateHeatmap);
+            },
+            updateHeatmap(values) {
+                const [min, max] = values.map(Number);
+                d3.select(this.$refs.heatmap)
+                    .selectAll('rect')
+                    .style('fill', d => (d.value >= min && d.value <= max) ? this.colorScale(d.value) : '#ccc');
+            },
+            handleMouseOver(event, d) {
+                d3.select(event.target)
+                    .attr('stroke', 'black')
+                    .attr('stroke-width', '2px');
+
+                d3.select('body')
+                    .append('div')
+                    .attr('class', 'tooltip')
+                    .style('position', 'absolute')
+                    .style('background-color', 'white')
+                    .style('border', 'solid')
+                    .style('border-width', '1px')
+                    .style('border-radius', '5px')
+                    .style('padding', '5px')
+                    .style('left', `${event.pageX + 10}px`)
+                    .style('top', `${event.pageY - 10}px`)
+                    .html(`Flare: ${d.flare}<br>Value: ${d.value.toFixed(2)}%`);
+            },
+            handleMouseOut(event) {
+                d3.select(event.target)
+                    .attr('stroke', 'white')
+                    .attr('stroke-width', '1px');
+
+                d3.select('.tooltip').remove();
+            }
+        }
+    };
+
+    // Vue app
+    const app = Vue.createApp({
+        components: {
+            'heatmap-component': HeatmapComponent
+        },
+        data() {
+            return {
+                heatmapData: Array.from({ length: 120 }, (_, i) => ({
+                    flare: i + 1,
+                    value: Math.random() * 100
+                }))
+            };
+        }
+    });
+
+    app.mount('#app');
+    </script>
+</body>
+</html>
